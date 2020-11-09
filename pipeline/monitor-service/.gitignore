@@ -1,0 +1,8 @@
+# dependencies
+/node_modules
+
+# serverless build dirs
+.serverless
+
+# ignornig this beause account details are written for CodeArtifact
+package-lock.json

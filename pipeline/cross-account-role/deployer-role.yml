@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Used as cross-account role by CodeBuild.
+Parameters:
+  CIAccountId:
+    Type: String
+    Description: Enter CI account ID
+Resources:
+  DeployerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub ${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - codepipeline.amazonaws.com
+                - codebuild.amazonaws.com
+                - cloudformation.amazonaws.com
+              AWS: !Sub "arn:aws:iam::${CIAccountId}:role/pipeline-codebuild-role"
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:*
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - sns:*
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - cloudformation:*
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - lambda:*
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - logs:*
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource:
+                  - "*"

@@ -1,0 +1,11 @@
+service: myapp
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  stage: ${opt:stage}
+  region: us-west-2
+
+functions:
+  hello:
+    handler: handler.hello

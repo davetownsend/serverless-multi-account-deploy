@@ -1,0 +1,26 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 12
+  pre_build:
+    commands:
+      - yum install epel-release -y
+      - yum install jq -y
+      - param_name=/myapp/$STAGE/deploy_role
+      - DEPLOY_ROLE=$(aws ssm get-parameter --name $param_name | jq ".Parameter.Value" | tr -d \")
+      - aws codeartifact login --tool npm --repository artifacts-repo --domain artifacts-domain --domain-owner $ACCOUNT_ID
+      - npm -d ping
+  build:
+    commands:
+      - role=$(aws sts assume-role --role-arn $DEPLOY_ROLE --role-session-name deployer-session --duration-seconds $DURATION)
+      - KEY=$(echo $role | jq ".Credentials.AccessKeyId" --raw-output)
+      - SECRET=$(echo $role | jq ".Credentials.SecretAccessKey" --raw-output)
+      - TOKEN=$(echo $role | jq ".Credentials.SessionToken" --raw-output)
+      - export AWS_ACCESS_KEY_ID=$KEY
+      - export AWS_SECRET_ACCESS_KEY=$SECRET
+      - export AWS_SESSION_TOKEN=$TOKEN
+      - export AWS_DEFAULT_REGION=$AWS_REGION
+      - cd app && npm i
+      - $(npm bin)/sls deploy --stage $STAGE -v

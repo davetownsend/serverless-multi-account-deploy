@@ -1,0 +1,23 @@
+{
+  "name": "pipeline-monitor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "middy": "^0.36.0",
+    "superagent": "^6.1.0"
+  },
+  "devDependencies": {
+    "prettier": "2.1.2",
+    "eslint": "^7.11.0",
+    "eslint-config-prettier": "^6.13.0",
+    "serverless": "2.4.0",
+    "serverless-iam-roles-per-function": "^2.0.2"
+  }
+}

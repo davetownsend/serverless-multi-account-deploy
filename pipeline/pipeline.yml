@@ -1,0 +1,336 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  GitHubUser:
+    Type: String
+    Description: GitHub account Name
+  GitHubRepo:
+    Type: String
+    Description: GitHub Repo Name
+    Default: "serverles-multi-account-deploy"
+  GitHubBranch:
+    Type: String
+    Description: GitHub Branch name
+    Default: "main"
+  CodeBuildEnvironmentType:
+    Type: String
+    Default: "LINUX_CONTAINER"
+    Description: Build container type
+  CodeBuildComputeType:
+    Type: String
+    Default: "BUILD_GENERAL1_SMALL"
+    Description: Build compute type
+  CodeBuildImage:
+    Type: String
+    Default: "aws/codebuild/amazonlinux2-x86_64-standard:3.0"
+    Description: Build Image
+  DevAccountId:
+    Type: String
+    Description: AWS Account ID for Dev
+  TestAccountId:
+    Type: String
+    Description: AWS Account ID for Test
+  ProdAccountId:
+    Type: String
+    Description: AWS Account ID for Prod
+
+Resources:
+  GitHubCodeStarConnection:
+    Type: AWS::CodeStarConnections::Connection
+    Properties:
+      ConnectionName: PiplelineConnection
+      ProviderType: GitHub
+
+  ArtifactsDomain:
+    Type: "AWS::CodeArtifact::Domain"
+    Properties:
+      DomainName: "artifacts-domain"
+  UpstreamArtifactsRepo:
+    Type: "AWS::CodeArtifact::Repository"
+    Properties:
+      RepositoryName: "upstream-artifacts-repo"
+      DomainName: !GetAtt ArtifactsDomain.Name
+      ExternalConnections:
+        - public:npmjs
+  ArtifactsRepo:
+    Type: "AWS::CodeArtifact::Repository"
+    Properties:
+      RepositoryName: "artifacts-repo"
+      DomainName: !GetAtt ArtifactsDomain.Name
+      Upstreams:
+        - !GetAtt UpstreamArtifactsRepo.Name
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      RoleName: !Sub ${AWS::StackName}-codebuild-role
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-codebuild-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/myapp-build-*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/myapp-build-*/*"
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/myapp/*
+              - Effect: Allow
+                Action:
+                  - s3:Put*
+                  - s3:Get*
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - codeartifact:GetAuthorizationToken
+                  - codeartifact:GetRepositoryEndpoint
+                  - codeartifact:ReadFromRepository
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - sts:GetServiceBearerToken
+                Resource:
+                  - "*"
+                Condition:
+                  StringEquals:
+                    sts:AWSServiceName: codeartifact.amazonaws.com
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource:
+                  - !Sub arn:aws:iam::${DevAccountId}:role/deployer-role
+                  # - !Sub arn:aws:iam::${TestAccountId}:role/deployer-role
+                  # - !Sub arn:aws:iam::${ProdAccountId}:role/deployer-role
+
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      RoleName: !Sub ${AWS::StackName}-codepipeline-role
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-codepipeline-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource:
+                  - !GetAtt CodeBuildDeployDev.Arn
+                  - !GetAtt CodeBuildDeployTest.Arn
+                  - !GetAtt CodeBuildDeployProd.Arn
+              - Effect: Allow
+                Action:
+                  - s3:Put*
+                  - s3:Get*
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Ref SNSTopic
+              - Effect: Allow
+                Action:
+                  - codestar-connections:UseConnection
+                Resource:
+                  - "*"
+
+  CodePipelineBucket:
+    Type: AWS::S3::Bucket
+
+  CodeBuildDeployDev:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: myapp-build-dev
+      Description: Deploy MyApp to DEV
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: !Ref CodeBuildEnvironmentType
+        ComputeType: !Ref CodeBuildComputeType
+        Image: !Sub ${CodeBuildImage}
+        EnvironmentVariables:
+          - Name: DURATION
+            Value: "1200"
+          - Name: STAGE
+            Value: "dev"
+          - Name: ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+      Source:
+        Type: CODEPIPELINE
+      TimeoutInMinutes: 20
+  CodeBuildDeployTest:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: myapp-build-test
+      Description: Deploy myapp to TEST
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: !Ref CodeBuildEnvironmentType
+        ComputeType: !Ref CodeBuildComputeType
+        Image: !Sub ${CodeBuildImage}
+        EnvironmentVariables:
+          - Name: DURATION
+            Value: "1200"
+          - Name: STAGE
+            Value: "test"
+          - Name: ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+      Source:
+        Type: CODEPIPELINE
+      TimeoutInMinutes: 20
+  CodeBuildDeployProd:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: myapp-build-prod
+      Description: Deploy myapp to PROD
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: !Ref CodeBuildEnvironmentType
+        ComputeType: !Ref CodeBuildComputeType
+        Image: !Sub ${CodeBuildImage}
+        EnvironmentVariables:
+          - Name: DURATION
+            Value: "1200"
+          - Name: STAGE
+            Value: "prod"
+          - Name: ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+      Source:
+        Type: CODEPIPELINE
+      TimeoutInMinutes: 20
+
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub ${AWS::StackName}
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - InputArtifacts: []
+              Name: Source
+              ActionTypeId:
+                Version: "1"
+                Owner: AWS
+                Category: Source
+                Provider: CodeStarSourceConnection
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+              Configuration:
+                ConnectionArn: !Ref GitHubCodeStarConnection
+                FullRepositoryId: !Sub ${GitHubUser}/${GitHubRepo}
+                BranchName: !Ref GitHubBranch
+                OutputArtifactFormat: "CODE_ZIP"
+        - Name: DEV-Deploy
+          Actions:
+            - Name: Deploy-to-DEV
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: "1"
+                Provider: CodeBuild
+              InputArtifacts:
+                - Name: SourceArtifact
+              Configuration:
+                ProjectName: !Ref CodeBuildDeployDev
+              RunOrder: 1
+        - Name: TEST-Approval
+          Actions:
+            - Name: Approve-for-Test
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: "1"
+                Provider: Manual
+              Configuration:
+                NotificationArn: !Ref SNSTopic
+                ExternalEntityLink: "https://github.com/davetownsend/serverles-multi-account-deploy/releases"
+                CustomData: "TEST Deployment Pending Approval"
+              RunOrder: 1
+        - Name: TEST-Deploy
+          Actions:
+            - Name: Deploy-to-TEST
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: "1"
+                Provider: CodeBuild
+              InputArtifacts:
+                - Name: SourceArtifact
+              Configuration:
+                ProjectName: !Ref CodeBuildDeployTest
+              RunOrder: 1
+        - Name: PROD-Approval
+          Actions:
+            - Name: Approve-for-PROD
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: "1"
+                Provider: Manual
+              Configuration:
+                NotificationArn: !Ref SNSTopic
+                ExternalEntityLink: "https://github.com/davetownsend/serverles-multi-account-deploy/releases"
+                CustomData: "PROD Deployment Pending Approval"
+              RunOrder: 1
+        - Name: PROD-Deploy
+          Actions:
+            - Name: Deploy-to-PROD
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: "1"
+                Provider: CodeBuild
+              InputArtifacts:
+                - Name: SourceArtifact
+              Configuration:
+                ProjectName: !Ref CodeBuildDeployProd
+              RunOrder: 1
+      ArtifactStore:
+        Type: S3
+        Location: !Ref CodePipelineBucket
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+
+Outputs:
+  SNSTopicArn:
+    Description: ARN of SNS Topic
+    Value: !Ref SNSTopic
+  CodeStarGithubConnectionARN:
+    Description: Connection ARN for the Codestar connection
+    Value: !Ref GitHubCodeStarConnection

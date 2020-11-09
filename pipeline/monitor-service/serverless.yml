@@ -1,0 +1,59 @@
+service: pipeline-monitor-service
+
+package:
+  include:
+    - "node_modules/superagent/**"
+    - "node_modules/middy/**"
+
+provider:
+  name: aws
+  region: us-west-2
+  runtime: nodejs12.x
+  stage: ${opt:stage}
+
+plugins:
+  - serverless-iam-roles-per-function
+
+functions:
+  buildMonitor:
+    handler: build-monitor.notify
+    memorySize: 512
+    timeout: 10
+    environment:
+      STAGE: ${self:provider.stage}
+    events:
+      - cloudwatchEvent:
+          event:
+            source:
+              - "aws.codebuild"
+            detail-type:
+              - "CodeBuild Build State Change"
+            detail:
+              project-name:
+                - myapp-build-dev
+                - myapp-build-preprod
+                - myapp-build-prod
+              build-status:
+                - "SUCCEEDED"
+                - "FAILED"
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - ssm:GetParameters*
+        Resource:
+          - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/myapp/*"
+
+  pipelineMonitor:
+    handler: pipeline-monitor.notify
+    memorySize: 512
+    timeout: 10
+    environment:
+      STAGE: ${self:provider.stage}
+    events:
+      - sns: ${cf:pipeline.SNSTopicArn}
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - ssm:GetParameters*
+        Resource:
+          - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/myapp/*"
