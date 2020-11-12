@@ -1,6 +1,6 @@
 # serverless-multi-account-deploy
 
-Blog post (link)
+[Serverless multi-account deployments with CodePipeline & CodeBuild](https://unbounded.io/serverless-multi-account-deployments-with-codepipeline-codebuild-c41ce08e0ae5)
 
 ## Running the demo
 
