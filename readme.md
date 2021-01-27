@@ -2,6 +2,8 @@
 
 [Serverless multi-account deployments with CodePipeline & CodeBuild](https://unbounded.io/serverless-multi-account-deployments-with-codepipeline-codebuild-c41ce08e0ae5)
 
+![pipeline](docs/serverless-pipeline.png)
+
 ## Running the demo
 
 ### Step 1
@@ -23,6 +25,8 @@ Create a new stack in CloudFormation using [pipeline.yml](pipeline/pipeline.yml)
 Create a new stack in CloudFormation using [deployer-role.yml](pipeline/cross-account-role/deployer-role.yml)
 
 ### Step 4 - Deploy pipeline monitor-service (optional)
+
+![monitor](docs/pipeline-monitor.png)
 
 From the [monitor-service](pipeline/monitor-service) directory:
 
